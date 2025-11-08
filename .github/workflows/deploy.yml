@@ -15,9 +15,15 @@ jobs:
           node-version: 20
           cache: 'pnpm' 
           
-      # [THE FIX] This single run command installs pnpm globally, and then runs the dependency install.
-      - name: Install pnpm and Dependencies
-        run: npm install -g pnpm && pnpm install
+      # [THE FIX] Use the dedicated pnpm setup action 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.6 # Specify a known working pnpm version
+      
+      # [NEW STEP] Now run install using pnpm, which is now on the PATH
+      - name: Install dependencies
+        run: pnpm install
 
       - name: Deploy Convex backend
         run: npx convex deploy
