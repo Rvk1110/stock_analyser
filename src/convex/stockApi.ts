@@ -127,6 +127,7 @@ export const searchStocks = action({
   },
 });
 
+
 export const getHistoricalData = action({
   args: {
     symbol: v.string(),
@@ -136,9 +137,22 @@ export const getHistoricalData = action({
   },
   handler: async (ctx, args) => {
     try {
+      // [MODIFIED] Use interval (resolution), start_date, and end_date from args
+      // Twelve Data typically uses YYYY-MM-DD for date format, 
+      // but the frontend passes timestamps, so we convert them.
+      // NOTE: We rely on the API to perform the date filtering by default. 
+      // Twelve Data uses `start_date` and `end_date` in YYYY-MM-DD format.
+      // The current frontend implementation calculates a 30-day window 
+      // using timestamps (seconds since epoch) for from/to, so converting is crucial.
+      
+      const startDate = new Date(args.from * 1000).toISOString().split('T')[0];
+      const endDate = new Date(args.to * 1000).toISOString().split('T')[0];
+      
+      // Removed `outputsize=30` and hardcoded interval. Using args.resolution and date filtering.
       const response = await fetch(
-        `${BASE_URL}/time_series?symbol=${args.symbol}&interval=1day&outputsize=30&apikey=${TWELVE_DATA_API_KEY}`
+        `${BASE_URL}/time_series?symbol=${args.symbol}&interval=${args.resolution}&start_date=${startDate}&end_date=${endDate}&apikey=${TWELVE_DATA_API_KEY}`
       );
+      
       const data = await response.json();
 
       if (data.status === "error") {
@@ -165,16 +179,29 @@ export const getHistoricalData = action({
       timeSeries
         .reverse()
         .forEach((item: any) => {
+          // Twelve Data `datetime` is a string like "2023-11-08 00:00:00"
           const timestamp = new Date(item.datetime).getTime() / 1000;
           
-          if (timestamp >= args.from && timestamp <= args.to) {
-            timestamps.push(timestamp);
-            prices.push(parseFloat(item.close));
-            volumes.push(parseInt(item.volume));
-            opens.push(parseFloat(item.open));
-            highs.push(parseFloat(item.high));
-            lows.push(parseFloat(item.low));
-          }
+          // [MODIFIED] Remove client-side filtering logic: 
+          // Rely on the API for filtering, ensuring data is used as-is.
+          // The current filtering is unnecessary and confusing given the API call is now correct.
+
+          timestamps.push(timestamp);
+          prices.push(parseFloat(item.close));
+          volumes.push(parseInt(item.volume));
+          opens.push(parseFloat(item.open));
+          highs.push(parseFloat(item.high));
+          lows.push(parseFloat(item.low));
+          
+          // Original:
+          // if (timestamp >= args.from && timestamp <= args.to) {
+          //   timestamps.push(timestamp);
+          //   prices.push(parseFloat(item.close));
+          //   volumes.push(parseInt(item.volume));
+          //   opens.push(parseFloat(item.open));
+          //   highs.push(parseFloat(item.high));
+          //   lows.push(parseFloat(item.low));
+          // }
         });
 
       return {
