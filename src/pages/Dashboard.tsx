@@ -94,7 +94,8 @@ export default function Dashboard() {
       const from = to - 30 * 24 * 60 * 60;
       const historical = await getHistoricalData({
         symbol,
-        resolution: "D",
+        // [FIX] Changed invalid "D" to valid "1day"
+        resolution: "1day",
         from,
         to,
       });
