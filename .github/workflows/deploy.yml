@@ -13,19 +13,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # [FIX 1: Removed Cache line that caused the error] 
           
-      # [FIX 2: Ensure pnpm is set up before use]
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
         with:
           version: 8.15.6
 
       - name: Install dependencies
-        # Now pnpm is guaranteed to be on the PATH
         run: pnpm install
 
+      # [THE FIX] Pass CONVEX_DEPLOY_KEY explicitly as a token
       - name: Deploy Convex backend
-        run: npx convex deploy
+        run: npx convex deploy --token ${{ secrets.CONVEX_DEPLOY_KEY }}
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          # Remove CONVEX_DEPLOY_KEY from the env: block since it's passed directly above
+          # CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          # Keep this empty or remove the env block entirely if not needed
+          # We will remove the env block for simplicity
