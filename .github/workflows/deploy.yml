@@ -22,11 +22,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      # [THE FIX] Pass CONVEX_DEPLOY_KEY explicitly as a token
+      # [THE FIX] Revert the run command and use the env block to pass the token
       - name: Deploy Convex backend
-        run: npx convex deploy --token ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy
         env:
-          # Remove CONVEX_DEPLOY_KEY from the env: block since it's passed directly above
-          # CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-          # Keep this empty or remove the env block entirely if not needed
-          # We will remove the env block for simplicity
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }} # Inject the secret here
