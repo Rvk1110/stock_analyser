@@ -13,16 +13,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm' 
+          # [FIX 1: Removed Cache line that caused the error] 
           
-      # [THE FIX] Use the dedicated pnpm setup action 
+      # [FIX 2: Ensure pnpm is set up before use]
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8.15.6 # Specify a known working pnpm version
-      
-      # [NEW STEP] Now run install using pnpm, which is now on the PATH
+          version: 8.15.6
+
       - name: Install dependencies
+        # Now pnpm is guaranteed to be on the PATH
         run: pnpm install
 
       - name: Deploy Convex backend
