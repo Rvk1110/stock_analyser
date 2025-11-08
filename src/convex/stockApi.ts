@@ -108,7 +108,6 @@ export const searchStocks = action({
         .slice(0, 10)
         .map((item: any) => ({
           symbol: item.symbol,
-          instrument_name: item.instrument_name,
           description: item.instrument_name || item.symbol,
           displaySymbol: item.symbol,
           type: item.instrument_type,
@@ -141,16 +140,15 @@ export const getHistoricalData = action({
       const startDate = new Date(args.from * 1000).toISOString().split('T')[0];
       const endDate = new Date(args.to * 1000).toISOString().split('T')[0];
 
-      // [FIX 3] Use args.resolution, start_date, and end_date in the API call
-      // Hardcoded outputsize=30 has been removed to allow for dynamic range.
       const response = await fetch(
         `${BASE_URL}/time_series?symbol=${args.symbol}&interval=${args.resolution}&start_date=${startDate}&end_date=${endDate}&apikey=${TWELVE_DATA_API_KEY}`
       );
       
       const data = await response.json();
 
+      // Check for API errors explicitly
       if (data.status === "error") {
-        throw new Error(data.message || "Invalid stock symbol");
+        throw new Error(`Twelve Data API Error: ${data.message || "Invalid stock symbol"}`);
       }
 
       if (data.code === 429) {
@@ -195,7 +193,8 @@ export const getHistoricalData = action({
       };
     } catch (error) {
       console.error("Error fetching historical data:", error);
-      throw new Error("Failed to fetch historical data");
+      // Return the specific error message if it's an instance of Error
+      throw new Error(error instanceof Error ? error.message : "Failed to fetch historical data due to network error.");
     }
   },
 });
