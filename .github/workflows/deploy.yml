@@ -3,7 +3,7 @@ name: Deploy to Convex
 on:
   push:
     branches:
-      - demo # The branch to deploy from
+      - demo # <--- THIS LINE IS THE FIX: It must match your development branch name
 
 jobs:
   deploy:
