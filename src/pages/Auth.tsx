@@ -37,6 +37,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       navigate(redirect);
     }
   }, [authLoading, isAuthenticated, navigate, redirectAfterAuth]);
+  
   const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -71,7 +72,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       setTimeout(() => {
         const redirect = redirectAfterAuth || "/";
         navigate(redirect);
-      }, 100); 
+      }, 100);
     } catch (error) {
       console.error("OTP verification error:", error);
 
@@ -257,3 +258,42 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       </>
                     )}
                   </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setStep("signIn")}
+                    disabled={isLoading}
+                    className="w-full"
+                  >
+                    Use different email
+                  </Button>
+                </CardFooter>
+              </form>
+            </>
+          )}
+
+          <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
+            Secured by{" "}
+            <a
+              href="https://vly.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-primary transition-colors"
+            >
+              vly.ai
+            </a>
+          </div>
+        </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AuthPage(props: AuthProps) {
+  return (
+    <Suspense>
+      <Auth {...props} />
+    </Suspense>
+  );
+}
