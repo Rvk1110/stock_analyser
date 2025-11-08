@@ -13,11 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # [FIX] Explicitly tell the action to use pnpm for caching
           cache: 'pnpm' 
           
-      - name: Install dependencies
-        # [FIX] Change the command to use pnpm install
+      # [THE FIX] This single run command installs pnpm globally, and then runs the dependency install.
+      - name: Install pnpm and Dependencies
         run: npm install -g pnpm && pnpm install
 
       - name: Deploy Convex backend
