@@ -1,178 +1,200 @@
+"use node";
+
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import { getCurrentUser } from "./users";
+import { action } from "./_generated/server";
 
-// Get user's portfolio stocks
-export const getPortfolio = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      return [];
+const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY || "";
+const BASE_URL = "https://api.twelvedata.com";
+
+export const getStockQuote = action({
+  args: { symbol: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/quote?symbol=${args.symbol}&apikey=${TWELVE_DATA_API_KEY}`
+      );
+      const data = await response.json();
+      
+      if (data.status === "error") {
+        throw new Error(data.message || "Invalid stock symbol or no data available");
+      }
+
+      if (data.code === 429) {
+        throw new Error("API rate limit reached. Please try again later.");
+      }
+
+      return {
+        symbol: args.symbol,
+        currentPrice: parseFloat(data.close),
+        change: parseFloat(data.change),
+        percentChange: parseFloat(data.percent_change),
+        high: parseFloat(data.high),
+        low: parseFloat(data.low),
+        open: parseFloat(data.open),
+        previousClose: parseFloat(data.previous_close),
+        volume: parseInt(data.volume) || 0,
+      };
+    } catch (error) {
+      console.error("Error fetching stock quote:", error);
+      throw new Error(error instanceof Error ? error.message : "Failed to fetch stock data");
     }
-
-    return await ctx.db
-      .query("portfolioStocks")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
   },
 });
 
-// Add stock to portfolio
-export const addToPortfolio = mutation({
+export const getCompanyProfile = action({
+  args: { symbol: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/profile?symbol=${args.symbol}&apikey=${TWELVE_DATA_API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.status === "error") {
+        throw new Error(data.message || "Invalid stock symbol");
+      }
+
+      if (data.code === 429) {
+        throw new Error("API rate limit reached. Please try again later.");
+      }
+
+      return {
+        name: data.name,
+        ticker: data.symbol,
+        exchange: data.exchange,
+        industry: data.industry,
+        sector: data.sector,
+        marketCap: data.market_cap,
+        country: data.country,
+        currency: data.currency,
+        description: data.description,
+      };
+    } catch (error) {
+      console.error("Error fetching company profile:", error);
+      throw new Error("Failed to fetch company profile");
+    }
+  },
+});
+
+export const searchStocks = action({
+  args: { query: v.string() },
+  handler: async (ctx, args) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/symbol_search?symbol=${args.query}&apikey=${TWELVE_DATA_API_KEY}`
+      );
+      const data = await response.json();
+
+      console.log("Twelve Data search response:", JSON.stringify(data, null, 2));
+
+      if (data.status === "error") {
+        throw new Error(data.message || "Invalid search query or API error");
+      }
+
+      if (data.code === 429) {
+        const errorMsg = "API rate limit reached. Please try again later or upgrade your API key.";
+        throw new Error(errorMsg);
+      }
+
+      const matches = data.data || [];
+      
+      console.log("Matches found:", matches.length);
+      
+      if (matches.length === 0) {
+        return [];
+      }
+      
+      const results = matches
+        .slice(0, 10)
+        .map((item: any) => ({
+          symbol: item.symbol,
+          description: item.instrument_name || item.symbol,
+          displaySymbol: item.symbol,
+          type: item.instrument_type,
+          region: item.country,
+        }));
+      
+      console.log("Returning results:", JSON.stringify(results, null, 2));
+      
+      return results;
+    } catch (error) {
+      console.error("Error searching stocks:", error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Failed to search stocks");
+    }
+  },
+});
+
+export const getHistoricalData = action({
   args: {
     symbol: v.string(),
-    companyName: v.string(),
-    shares: v.number(),
-    purchasePrice: v.number(),
+    resolution: v.string(),
+    from: v.number(),
+    to: v.number(),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      throw new Error("User must be authenticated");
+    try {
+      // Twelve Data uses YYYY-MM-DD for start_date and end_date
+      const startDate = new Date(args.from * 1000).toISOString().split('T')[0];
+      const endDate = new Date(args.to * 1000).toISOString().split('T')[0];
+
+      const response = await fetch(
+        `${BASE_URL}/time_series?symbol=${args.symbol}&interval=${args.resolution}&start_date=${startDate}&end_date=${endDate}&apikey=${TWELVE_DATA_API_KEY}`
+      );
+      
+      const data = await response.json();
+
+      // Check for API errors explicitly
+      if (data.status === "error") {
+        throw new Error(`Twelve Data API Error: ${data.message || "Invalid stock symbol"}`);
+      }
+
+      if (data.code === 429) {
+        throw new Error("API rate limit reached. Please try again later.");
+      }
+
+      const timeSeries = data.values || [];
+      
+      if (timeSeries.length === 0) {
+        return { timestamps: [], prices: [], volumes: [] };
+      }
+
+      const timestamps: number[] = [];
+      const prices: number[] = [];
+      const volumes: number[] = [];
+      const opens: number[] = [];
+      const highs: number[] = [];
+      const lows: number[] = [];
+
+      timeSeries
+        .reverse()
+        .forEach((item: any) => {
+          // Twelve Data `datetime` is a string like "YYYY-MM-DD HH:MM:SS"
+          const timestamp = new Date(item.datetime).getTime() / 1000;
+          
+          timestamps.push(timestamp);
+          prices.push(parseFloat(item.close));
+          volumes.push(parseInt(item.volume));
+          opens.push(parseFloat(item.open));
+          highs.push(parseFloat(item.high));
+          lows.push(parseFloat(item.low));
+          
+        });
+
+      return {
+        timestamps,
+        prices,
+        volumes,
+        opens,
+        highs,
+        lows,
+      };
+    } catch (error) {
+      console.error("Error fetching historical data:", error);
+      // [FIXED]: Return the specific error message if it's an instance of Error
+      throw new Error(error instanceof Error ? error.message : "Failed to fetch historical data due to network error.");
     }
-
-    // Check if stock already exists in portfolio
-    const existing = await ctx.db
-      .query("portfolioStocks")
-      .withIndex("by_userId_and_symbol", (q) =>
-        q.eq("userId", user._id).eq("symbol", args.symbol)
-      )
-      .unique();
-
-    if (existing) {
-      // Update existing stock
-      await ctx.db.patch(existing._id, {
-        shares: existing.shares + args.shares,
-        purchasePrice:
-          (existing.purchasePrice * existing.shares +
-            args.purchasePrice * args.shares) /
-          (existing.shares + args.shares),
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("portfolioStocks", {
-      userId: user._id,
-      symbol: args.symbol.toUpperCase(),
-      companyName: args.companyName,
-      shares: args.shares,
-      purchasePrice: args.purchasePrice,
-    });
-  },
-});
-
-// Remove stock from portfolio
-export const removeFromPortfolio = mutation({
-  args: {
-    portfolioId: v.id("portfolioStocks"),
-  },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      throw new Error("User must be authenticated");
-    }
-
-    const stock = await ctx.db.get(args.portfolioId);
-    if (!stock || stock.userId !== user._id) {
-      throw new Error("Stock not found or unauthorized");
-    }
-
-    await ctx.db.delete(args.portfolioId);
-  },
-});
-
-// Update portfolio stock
-export const updatePortfolioStock = mutation({
-  args: {
-    portfolioId: v.id("portfolioStocks"),
-    shares: v.optional(v.number()),
-    purchasePrice: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      throw new Error("User must be authenticated");
-    }
-
-    const stock = await ctx.db.get(args.portfolioId);
-    if (!stock || stock.userId !== user._id) {
-      throw new Error("Stock not found or unauthorized");
-    }
-
-    const updates: any = {};
-    if (args.shares !== undefined) updates.shares = args.shares;
-    if (args.purchasePrice !== undefined)
-      updates.purchasePrice = args.purchasePrice;
-
-    await ctx.db.patch(args.portfolioId, updates);
-  },
-});
-
-// Get user's favorite stocks
-export const getFavorites = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      return [];
-    }
-
-    return await ctx.db
-      .query("favoriteStocks")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
-  },
-});
-
-// Add stock to favorites
-export const addToFavorites = mutation({
-  args: {
-    symbol: v.string(),
-    companyName: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      throw new Error("User must be authenticated");
-    }
-
-    // Check if already favorited
-    const existing = await ctx.db
-      .query("favoriteStocks")
-      .withIndex("by_userId_and_symbol", (q) =>
-        q.eq("userId", user._id).eq("symbol", args.symbol)
-      )
-      .unique();
-
-    if (existing) {
-      return existing._id;
-    }
-
-    return await ctx.db.insert("favoriteStocks", {
-      userId: user._id,
-      symbol: args.symbol.toUpperCase(),
-      companyName: args.companyName,
-    });
-  },
-});
-
-// Remove from favorites
-export const removeFromFavorites = mutation({
-  args: {
-    favoriteId: v.id("favoriteStocks"),
-  },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
-      throw new Error("User must be authenticated");
-    }
-
-    const favorite = await ctx.db.get(args.favoriteId);
-    if (!favorite || favorite.userId !== user._id) {
-      throw new Error("Favorite not found or unauthorized");
-    }
-
-    await ctx.db.delete(args.favoriteId);
   },
 });
