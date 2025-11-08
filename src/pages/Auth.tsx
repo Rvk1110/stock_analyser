@@ -67,8 +67,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
       console.log("signed in");
 
-      const redirect = redirectAfterAuth || "/";
-      navigate(redirect);
+      // [FIX] Use setTimeout to let auth state fully settle before navigating
+      setTimeout(() => {
+        const redirect = redirectAfterAuth || "/";
+        navigate(redirect);
+      }, 100); 
     } catch (error) {
       console.error("OTP verification error:", error);
 
@@ -86,8 +89,12 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       console.log("Attempting anonymous sign in...");
       await signIn("anonymous");
       console.log("Anonymous sign in successful");
-      const redirect = redirectAfterAuth || "/";
-      navigate(redirect);
+      
+      // [FIX] Use setTimeout to let auth state fully settle before navigating
+      setTimeout(() => {
+        const redirect = redirectAfterAuth || "/";
+        navigate(redirect);
+      }, 100);
     } catch (error) {
       console.error("Guest login error:", error);
       console.error("Error details:", JSON.stringify(error, null, 2));
@@ -250,42 +257,3 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       </>
                     )}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setStep("signIn")}
-                    disabled={isLoading}
-                    className="w-full"
-                  >
-                    Use different email
-                  </Button>
-                </CardFooter>
-              </form>
-            </>
-          )}
-
-          <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
-            <a
-              href="https://vly.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-primary transition-colors"
-            >
-              vly.ai
-            </a>
-          </div>
-        </Card>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function AuthPage(props: AuthProps) {
-  return (
-    <Suspense>
-      <Auth {...props} />
-    </Suspense>
-  );
-}
