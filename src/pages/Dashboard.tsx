@@ -27,9 +27,16 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  // [FIX 2] State to hold the selected company name
+  const [selectedCompanyName, setSelectedCompanyName] = useState<string | null>(null);
   const [stockData, setStockData] = useState<any>(null);
   const [historicalData, setHistoricalData] = useState<any[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
+  // [FIX 1] New state for portfolio market quotes
+  const [portfolioQuotes, setPortfolioQuotes] = useState<Record<string, any>>({});
+  // [FIX 1] New state for loading portfolio quotes
+  const [loadingPortfolioQuotes, setLoadingPortfolioQuotes] = useState(false);
+
 
   const portfolio = useQuery(api.stocks.getPortfolio);
   const favorites = useQuery(api.stocks.getFavorites);
@@ -45,9 +52,40 @@ export default function Dashboard() {
     }
   }, [authLoading, isAuthenticated, navigate]);
 
-  const loadStockData = async (symbol: string) => {
+  // [FIX 1] Effect to load all portfolio stock quotes
+  useEffect(() => {
+    async function loadPortfolioQuotes() {
+      if (!portfolio || portfolio.length === 0) {
+        setPortfolioQuotes({});
+        return;
+      }
+      setLoadingPortfolioQuotes(true);
+      const quotes: Record<string, any> = {};
+      
+      // Get unique symbols to avoid redundant API calls
+      const uniqueSymbols = [...new Set(portfolio.map(stock => stock.symbol))];
+
+      for (const symbol of uniqueSymbols) {
+        try {
+          const quote = await getStockQuote({ symbol });
+          quotes[symbol] = quote;
+        } catch (error) {
+          console.error(`Failed to fetch live quote for ${symbol}`, error);
+          quotes[symbol] = null;
+        }
+      }
+      setPortfolioQuotes(quotes);
+      setLoadingPortfolioQuotes(false);
+    }
+    loadPortfolioQuotes();
+  }, [portfolio, getStockQuote]);
+  // [FIX 1] End of new effect
+  
+  // [FIX 2] Updated to accept companyName
+  const loadStockData = async (symbol: string, companyName: string) => {
     setLoadingStock(true);
     setSelectedStock(symbol);
+    setSelectedCompanyName(companyName); // [FIX 2] Store company name
     try {
       const quote = await getStockQuote({ symbol });
       setStockData(quote);
@@ -76,6 +114,7 @@ export default function Dashboard() {
       console.error(error);
       setStockData(null);
       setHistoricalData([]);
+      setSelectedCompanyName(null); // [FIX 2] Reset on error
     } finally {
       setLoadingStock(false);
     }
@@ -112,19 +151,28 @@ export default function Dashboard() {
     return favorites?.some(fav => fav.symbol === symbol) || false;
   };
 
+  // [FIX 1] Updated to calculate market value using live quotes
   const calculatePortfolioValue = () => {
-    if (!portfolio) return 0;
-    return portfolio.reduce(
-      (total, stock) => total + stock.shares * stock.purchasePrice,
-      0
-    );
+    if (!portfolio || loadingPortfolioQuotes) return 0;
+    
+    return portfolio.reduce((total, stock) => {
+      const quote = portfolioQuotes[stock.symbol];
+      // Use live price if available, otherwise fall back to purchase price (cost basis)
+      const currentPrice = quote?.currentPrice || stock.purchasePrice;
+      return total + stock.shares * currentPrice;
+    }, 0);
   };
 
+  // [FIX 1] Updated to use current market value for chart
   const portfolioChartData =
-    portfolio?.map((stock) => ({
-      name: stock.symbol,
-      value: stock.shares * stock.purchasePrice,
-    })) || [];
+    portfolio?.map((stock) => {
+      const quote = portfolioQuotes[stock.symbol];
+      const currentPrice = quote?.currentPrice || stock.purchasePrice;
+      return {
+        name: stock.symbol,
+        value: stock.shares * currentPrice,
+      };
+    }) || [];
 
   if (authLoading || !user) {
     return (
@@ -193,8 +241,9 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <StockSearch
+                    // [FIX 2] Pass company name to loadStockData
                     onSelect={(symbol, name) => {
-                      loadStockData(symbol);
+                      loadStockData(symbol, name);
                     }}
                   />
                 </CardContent>
@@ -217,7 +266,8 @@ export default function Dashboard() {
                   <div className="flex-1">
                     <StockCard
                       symbol={stockData.symbol}
-                      companyName={stockData.symbol}
+                      // [FIX 2] Use selectedCompanyName (now available) or fallback to symbol
+                      companyName={selectedCompanyName || stockData.symbol}
                       currentPrice={stockData.currentPrice}
                       change={stockData.change}
                       percentChange={stockData.percentChange}
@@ -231,7 +281,8 @@ export default function Dashboard() {
                         const fav = favorites?.find(f => f.symbol === stockData.symbol);
                         if (fav) handleRemoveFromFavorites(fav._id);
                       } else {
-                        handleAddToFavorites(stockData.symbol, stockData.symbol);
+                        // Use stored company name when adding to favorites
+                        handleAddToFavorites(stockData.symbol, selectedCompanyName || stockData.symbol);
                       }
                     }}
                     className="shadow-sm"
@@ -306,7 +357,8 @@ export default function Dashboard() {
                           className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer"
                           onClick={() => {
                             setSelectedStock(fav.symbol);
-                            loadStockData(fav.symbol);
+                            // Pass the company name from favorites list
+                            loadStockData(fav.symbol, fav.companyName);
                           }}
                         >
                           <div>
@@ -369,9 +421,17 @@ export default function Dashboard() {
                       <CardTitle className="tracking-tight font-bold">
                         My Portfolio
                       </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Total Value: ${calculatePortfolioValue().toFixed(2)}
-                      </p>
+                      {/* [FIX 1] Display loading or calculated market value */}
+                      {loadingPortfolioQuotes ? (
+                        <p className="text-sm text-muted-foreground mt-1 flex items-center">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading Value...
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Total Value: ${calculatePortfolioValue().toFixed(2)}
+                        </p>
+                      )}
                     </div>
                     <Button
                       onClick={() => setAddDialogOpen(true)}
@@ -385,38 +445,52 @@ export default function Dashboard() {
                 <CardContent>
                   {portfolio && portfolio.length > 0 ? (
                     <div className="space-y-3">
-                      {portfolio.map((stock) => (
-                        <div
-                          key={stock._id}
-                          className="flex items-center justify-between p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex-1">
-                            <p className="font-bold">{stock.symbol}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {stock.companyName}
-                            </p>
-                            <div className="flex gap-4 mt-2 text-sm">
-                              <span>Shares: {stock.shares}</span>
-                              <span>
-                                Avg Price: ${stock.purchasePrice.toFixed(2)}
-                              </span>
-                              <span className="font-medium">
-                                Value: $
-                                {(stock.shares * stock.purchasePrice).toFixed(
-                                  2
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveFromPortfolio(stock._id)}
+                      {portfolio.map((stock) => {
+                        const quote = portfolioQuotes[stock.symbol];
+                        const currentPrice = quote?.currentPrice;
+                        const change = quote?.change;
+                        
+                        // Calculate Current Value and P&L (Profit & Loss)
+                        const cost = stock.shares * stock.purchasePrice;
+                        const currentValue = stock.shares * (currentPrice || stock.purchasePrice);
+                        const pnl = currentValue - cost;
+
+                        return (
+                          <div
+                            key={stock._id}
+                            className="flex items-center justify-between p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow"
                           >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="flex-1">
+                              <p className="font-bold">{stock.symbol}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {stock.companyName}
+                              </p>
+                              <div className="flex flex-wrap gap-4 mt-2 text-sm">
+                                <span>Shares: {stock.shares}</span>
+                                <span>
+                                  Avg Price: ${stock.purchasePrice.toFixed(2)}
+                                </span>
+                                <span className="font-medium">
+                                  Current Value: $
+                                  {currentValue.toFixed(2)}
+                                </span>
+                                {currentPrice && (
+                                  <span className={`font-medium ${pnl > 0 ? "text-green-600" : pnl < 0 ? "text-red-600" : "text-gray-500"}`}>
+                                    P&L: {pnl.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveFromPortfolio(stock._id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-center text-muted-foreground py-8">
