@@ -108,6 +108,7 @@ export const searchStocks = action({
         .slice(0, 10)
         .map((item: any) => ({
           symbol: item.symbol,
+          instrument_name: item.instrument_name,
           description: item.instrument_name || item.symbol,
           displaySymbol: item.symbol,
           type: item.instrument_type,
@@ -127,7 +128,6 @@ export const searchStocks = action({
   },
 });
 
-
 export const getHistoricalData = action({
   args: {
     symbol: v.string(),
@@ -137,18 +137,12 @@ export const getHistoricalData = action({
   },
   handler: async (ctx, args) => {
     try {
-      // [MODIFIED] Use interval (resolution), start_date, and end_date from args
-      // Twelve Data typically uses YYYY-MM-DD for date format, 
-      // but the frontend passes timestamps, so we convert them.
-      // NOTE: We rely on the API to perform the date filtering by default. 
-      // Twelve Data uses `start_date` and `end_date` in YYYY-MM-DD format.
-      // The current frontend implementation calculates a 30-day window 
-      // using timestamps (seconds since epoch) for from/to, so converting is crucial.
-      
+      // Twelve Data uses YYYY-MM-DD for start_date and end_date
       const startDate = new Date(args.from * 1000).toISOString().split('T')[0];
       const endDate = new Date(args.to * 1000).toISOString().split('T')[0];
-      
-      // Removed `outputsize=30` and hardcoded interval. Using args.resolution and date filtering.
+
+      // [FIX 3] Use args.resolution, start_date, and end_date in the API call
+      // Hardcoded outputsize=30 has been removed to allow for dynamic range.
       const response = await fetch(
         `${BASE_URL}/time_series?symbol=${args.symbol}&interval=${args.resolution}&start_date=${startDate}&end_date=${endDate}&apikey=${TWELVE_DATA_API_KEY}`
       );
@@ -179,13 +173,9 @@ export const getHistoricalData = action({
       timeSeries
         .reverse()
         .forEach((item: any) => {
-          // Twelve Data `datetime` is a string like "2023-11-08 00:00:00"
+          // Twelve Data `datetime` is a string like "YYYY-MM-DD HH:MM:SS"
           const timestamp = new Date(item.datetime).getTime() / 1000;
           
-          // [MODIFIED] Remove client-side filtering logic: 
-          // Rely on the API for filtering, ensuring data is used as-is.
-          // The current filtering is unnecessary and confusing given the API call is now correct.
-
           timestamps.push(timestamp);
           prices.push(parseFloat(item.close));
           volumes.push(parseInt(item.volume));
@@ -193,15 +183,6 @@ export const getHistoricalData = action({
           highs.push(parseFloat(item.high));
           lows.push(parseFloat(item.low));
           
-          // Original:
-          // if (timestamp >= args.from && timestamp <= args.to) {
-          //   timestamps.push(timestamp);
-          //   prices.push(parseFloat(item.close));
-          //   volumes.push(parseInt(item.volume));
-          //   opens.push(parseFloat(item.open));
-          //   highs.push(parseFloat(item.high));
-          //   lows.push(parseFloat(item.low));
-          // }
         });
 
       return {
